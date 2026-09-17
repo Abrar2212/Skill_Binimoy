@@ -1,4 +1,4 @@
-# 🎓 Skill Binimoy (Frontend)
+# 🎓 Skill Binimoy (স্কিল বিনিময়)
 
 > **Decentralized Peer-to-Peer Skill Exchange & Mentorship Platform**  
 > Learn what you love, teach what you master — with zero monetary barriers.
@@ -8,46 +8,58 @@
 [![Vite](https://img.shields.io/badge/Vite-5.x-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.x-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![GSAP](https://img.shields.io/badge/GSAP-3.x-88CE02?style=for-the-badge&logo=greensock&logoColor=white)](https://greensock.com/gsap/)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-4.x-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
+[![Firebase](https://img.shields.io/badge/Firebase_Firestore-Admin_SDK-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
 
 ---
 
 ## 🌟 Overview
 
-**Skill Binimoy** is a peer-to-peer knowledge barter platform designed to democratize learning and skill sharing. Rather than paying monetary fees, users exchange their skills (e.g., Web Development, UI/UX Design, Language Learning, Music) in return for learning skills from fellow community members.
-
-This repository hosts the **modern frontend application**, engineered with a clean component-driven architecture, fluid GSAP micro-animations, Tailwind CSS styling, responsive Dark/Light themes, and full TypeScript type safety.
+**Skill Binimoy** is a full-stack peer-to-peer knowledge barter platform designed to democratize education. Instead of paying tuition or subscription fees, users exchange their skills (e.g., Web Development, Graphic Design, Languages, Music) in return for learning skills from vetted peers across the community.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-- 🎨 **Dynamic Landing Page**: Cutout hero showcase, continuous floating badges powered by GSAP, live stats counters, and interactive testimonials.
-- 🏪 **Skill Marketplace**: Search, filter by categories, and explore community members with teaching/learning tags. Direct modal to submit skill exchange proposals.
-- 🤝 **Exchange Requests Hub**: Manage incoming requests and sent proposals with real-time status tracking (Pending, Accepted, Rejected).
-- 📹 **1-on-1 Video Calling & Sessions**: Video session management with Jitsi Meet integration, review endorsements, and star rating system.
-- 💬 **Messaging & AI Assistant**: Direct peer chat interface alongside an embedded AI learning assistant drawer.
-- 📊 **Learner Dashboard**: Overview metrics (skills shared, skills learned, active sessions, reputation), activity feeds, and upcoming sessions.
-- 👤 **Profile & Customization**: Image upload with automatic client-side canvas compression, custom banner themes, bio, and skill portfolio manager.
-- 🌓 **Dark & Light Mode**: Persistent theme toggle with seamless visual transitions.
+- 🎨 **Dynamic Landing Page**: Cutout hero presentation with circular emerald gradient backdrop, continuous floating badges powered by GSAP, and live stats counters.
+- 🏪 **Live Peer Marketplace**: Search by keyword, filter by categories, explore community members with teaching/learning tags, and propose skill exchanges.
+- 🤝 **Exchange Requests Hub**: Two-way workflow for sent and received proposals with real-time status management.
+- 📹 **1-on-1 Video Sessions & Calling**: Integrated meeting management with Jitsi Meet and peer ratings/reviews.
+- 💬 **Peer Messaging & AI Assistant**: Real-time conversation sync alongside an embedded AI learning assistant drawer.
+- 📊 **Learner Dashboard**: Overview metrics (skills shared, skills learned, active sessions, reputation), activity feeds, and upcoming schedules.
+- 👤 **Profile Studio**: Profile image upload with automatic client-side canvas compression, custom banner themes, and skill portfolio manager.
+- 🌓 **Dark & Light Mode**: Persistent theme toggle with smooth transitions.
 
 ---
 
-## 📁 Directory Structure
+## 📁 Repository Structure
 
 ```text
 Skill_Binimoy/
+├── backend/
+│   ├── config/                # Firebase Admin & database configuration
+│   ├── controllers/           # Business logic & request handlers
+│   ├── database/              # Schema & initialization scripts
+│   ├── middleware/            # JWT authentication middleware
+│   ├── routes/                # Express API routes
+│   ├── utils/                 # Email delivery (Brevo) & helpers
+│   ├── .env.example           # Environment variable template
+│   ├── package.json
+│   ├── seedDatabase.js        # Initial database seeder
+│   └── server.js              # Express server entry point
 ├── frontend/
 │   ├── public/                # Static assets, SVG icons, images
 │   ├── src/
-│   │   ├── assets/            # Component graphics and SVGs
+│   │   ├── assets/            # Graphics and SVGs
 │   │   ├── components/
 │   │   │   ├── common/        # Atoms: Button, Card, Modal, Input, Badge, ThemeToggle
-│   │   │   ├── features/      # Feature modules: auth, chat, dashboard, home, marketplace, profile, requests, sessions
+│   │   │   ├── features/      # Feature modules (auth, chat, dashboard, marketplace, etc.)
 │   │   │   └── layout/        # Navbar, Footer, Sidebar, AppLayout
 │   │   ├── context/           # AuthContext, ThemeContext
-│   │   ├── pages/             # Route pages (Home, Marketplace, Dashboard, Chat, etc.)
-│   │   ├── services/          # API client, auth, chat, user, and exchange services
-│   │   └── types/             # TypeScript type definitions
+│   │   ├── pages/             # Application views & route pages
+│   │   ├── services/          # API client, auth, user, and exchange services
+│   │   └── types/             # TypeScript definitions
 │   ├── index.html
 │   ├── package.json
 │   ├── tailwind.config.js
@@ -64,13 +76,15 @@ Skill_Binimoy/
 ### Prerequisites
 - **Node.js** (v18 or higher recommended)
 - **npm** or **yarn** / **pnpm**
+- Firebase project credentials (for backend)
 
-### Installation
+---
 
-1. Clone the repository:
+### Backend Setup
+
+1. Navigate to the backend directory:
    ```bash
-   git clone https://github.com/Abrar2212/Skill_Binimoy.git
-   cd Skill_Binimoy/frontend
+   cd backend
    ```
 
 2. Install dependencies:
@@ -78,24 +92,42 @@ Skill_Binimoy/
    npm install
    ```
 
-3. Start the local development server:
+3. Configure environment variables:
+   ```bash
+   cp .env.example .env
+   ```
+   Fill in your configuration in `.env` (Port, JWT Secret, Firebase credentials, Brevo API key).
+
+4. Start the backend server:
+   ```bash
+   npm start
+   # or for development with auto-reload:
+   npm run dev
+   ```
+
+---
+
+### Frontend Setup
+
+1. Navigate to the frontend directory:
+   ```bash
+   cd frontend
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the Vite development server:
    ```bash
    npm run dev
    ```
 
-4. Open your browser and navigate to `http://localhost:5173`.
-
-### Production Build
-
-To build the application for production:
-```bash
-npm run build
-```
-
-To preview the production build locally:
-```bash
-npm run preview
-```
+4. Build for production:
+   ```bash
+   npm run build
+   ```
 
 ---
 
