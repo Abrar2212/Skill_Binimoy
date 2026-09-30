@@ -64,6 +64,41 @@ async function seed() {
         }
     ];
 
+    const firstNames = ['Aisha', 'Mahir', 'Sadia', 'Imran', 'Nabila', 'Rafi', 'Mim', 'Adnan', 'Tania', 'Siam'];
+    const lastNames = ['Rahman', 'Chowdhury', 'Islam', 'Hossain', 'Ahmed'];
+    const skillPairs = [
+        ['JavaScript', 'UI/UX Design'],
+        ['Python', 'Public Speaking'],
+        ['Graphic Design', 'Data Analysis'],
+        ['Video Editing', 'Digital Marketing'],
+        ['SQL', 'Content Writing'],
+        ['Node.js', 'Mobile App Development'],
+        ['Photography', 'Web Development'],
+        ['Excel', 'SEO'],
+        ['React', 'Technical Writing'],
+        ['Figma', 'Project Management']
+    ];
+
+    const generatedUsers = Array.from({ length: 50 }, (_, index) => {
+        const id = index + 6;
+        const sequence = String(index + 1).padStart(2, '0');
+        const firstName = firstNames[index % firstNames.length];
+        const lastName = lastNames[Math.floor(index / firstNames.length) % lastNames.length];
+
+        return {
+            id,
+            full_name: `${firstName} ${lastName} ${sequence}`,
+            email: `skillmember${sequence}@gmail.com`,
+            password: defaultPassword,
+            bio: `Skill Binimoy member ${sequence} sharing practical knowledge and learning from the community.`,
+            profile_image: `https://i.pravatar.cc/400?img=${id}`,
+            cover_image: null,
+            is_verified: true,
+            created_at: new Date(Date.now() - 3600000 * (id % 72)).toISOString()
+        };
+    });
+    usersData.push(...generatedUsers);
+
     console.log('Writing users to Firestore...');
     for (const u of usersData) {
         await db.collection('users').doc(String(u.id)).set(u);
@@ -95,6 +130,16 @@ async function seed() {
         { id: 14, user_id: 5, skill_name: 'Flutter App Development', skill_type: 'teach' },
         { id: 15, user_id: 5, skill_name: 'FastAPI Backend', skill_type: 'learn' }
     ];
+
+    const generatedSkills = generatedUsers.flatMap((user, index) => {
+        const [teachSkill, learnSkill] = skillPairs[index % skillPairs.length];
+        const skillId = 16 + index * 2;
+        return [
+            { id: skillId, user_id: user.id, skill_name: teachSkill, skill_type: 'teach' },
+            { id: skillId + 1, user_id: user.id, skill_name: learnSkill, skill_type: 'learn' }
+        ];
+    });
+    skillsData.push(...generatedSkills);
 
     console.log('Writing skills to Firestore...');
     for (const s of skillsData) {
@@ -179,6 +224,51 @@ async function seed() {
         await db.collection('messages').doc(String(m.id)).set(m);
     }
 
+    const generatedForumPosts = generatedUsers.map((user, index) => {
+        const [teachSkill, learnSkill] = skillPairs[index % skillPairs.length];
+        const postId = 1001 + index;
+        const createdAt = new Date(Date.now() - 3600000 * (index + 1)).toISOString();
+        return {
+            id: postId,
+            author_id: user.id,
+            title: `Looking for advice on ${learnSkill}`,
+            content: `I can help with ${teachSkill} and would appreciate guidance from someone experienced with ${learnSkill}. What learning path or practical exercises would you recommend?`,
+            category: index % 2 === 0 ? 'Web Development' : 'Career & Learning',
+            skill_related: learnSkill,
+            tags: [learnSkill, teachSkill, 'Skill Exchange'],
+            reactions: { helpful: [], insightful: [], heart: [], like: [] },
+            reaction_counts: { helpful: 0, insightful: 0, heart: 0, like: 0 },
+            comment_count: 0,
+            created_at: createdAt,
+            updated_at: createdAt
+        };
+    });
+
+    console.log('Writing generated forum posts to Firestore...');
+    for (const post of generatedForumPosts) {
+        await db.collection('forum_posts').doc(String(post.id)).set(post);
+    }
+
+    const generatedTradePosts = generatedUsers.map((user, index) => {
+        const [teachSkill, learnSkill] = skillPairs[index % skillPairs.length];
+        return {
+            id: 1001 + index,
+            user_id: user.id,
+            title: `${teachSkill} for ${learnSkill}`,
+            offered_skill: teachSkill,
+            requested_skill: learnSkill,
+            description: `I can teach ${teachSkill} and would like to learn ${learnSkill} through a friendly skill exchange.`,
+            availability: index % 2 === 0 ? 'Weekday evenings' : 'Weekend mornings',
+            status: 'Open',
+            created_at: new Date(Date.now() - 3600000 * (index + 1)).toISOString()
+        };
+    });
+
+    console.log('Writing generated trade posts to Firestore...');
+    for (const post of generatedTradePosts) {
+        await db.collection('trade_posts').doc(String(post.id)).set(post);
+    }
+
     const reviewsData = [
         {
             id: 1,
@@ -224,8 +314,10 @@ async function seed() {
     }
 
     console.log('Updating counters...');
-    await db.collection('counters').doc('users').set({ current: 5 }, { merge: true });
-    await db.collection('counters').doc('skills').set({ current: 15 }, { merge: true });
+    await db.collection('counters').doc('users').set({ current: 55 }, { merge: true });
+    await db.collection('counters').doc('skills').set({ current: 115 }, { merge: true });
+    await db.collection('counters').doc('forum_posts').set({ current: 1050 }, { merge: true });
+    await db.collection('counters').doc('trade_posts').set({ current: 1050 }, { merge: true });
     await db.collection('counters').doc('exchange_requests').set({ current: 2 }, { merge: true });
     await db.collection('counters').doc('sessions').set({ current: 2 }, { merge: true });
     await db.collection('counters').doc('messages').set({ current: 2 }, { merge: true });
