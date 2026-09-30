@@ -9,12 +9,12 @@ dist-ssr/
 build/
 
 # Local Environment Variables & Secrets
-.env
-.env*
+# .env
+# .env*
 !.env.example
 *.pem
-*serviceAccountKey*.json
-*firebase-adminsdk*.json
+# *serviceAccountKey*.json
+# *firebase-adminsdk*.json
 
 # Logs
 logs/
