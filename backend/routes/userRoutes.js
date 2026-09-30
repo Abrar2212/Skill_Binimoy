@@ -21,8 +21,11 @@ router.get('/skills/trending', c.getTrendingSkills);
 router.post('/skills', protect, c.addSkill);
 router.delete('/skills/:id', protect, c.deleteSkill);
 
-// Marketplace
-router.get('/all', protect, c.getAllUsers);
+// Marketplace & Trade Posts
+router.get('/all', c.getAllUsers);
+router.get('/trade-posts', c.getTradePosts);
+router.post('/trade-posts', protect, c.createTradePost);
+router.delete('/trade-posts/:id', protect, c.deleteTradePost);
 
 // Requests
 router.post('/requests', protect, c.sendRequest);
@@ -65,6 +68,9 @@ router.post('/call/respond', protect, c.respondCall);
 router.post('/call/cancel', protect, c.cancelCall);
 router.post('/call/signal', protect, c.sendCallSignal);
 router.get('/call/signal/:callId', protect, c.getCallSignals);
+
+// Community Forum (Problem Sharing, Threaded Comments & Replies, Reactions)
+router.use('/forum', require('./forumRoutes'));
 
 module.exports = router;
 

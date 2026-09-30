@@ -12,7 +12,10 @@ app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
 try {
     const userRoutes = require('./routes/userRoutes');
+    const forumRoutes = require('./routes/forumRoutes');
     app.use('/api/users', userRoutes);
+    app.use('/api/forum', forumRoutes);
+    app.use('/api/users/forum', forumRoutes);
     console.log('✅ Routes loaded');
 } catch(e) {
     console.error('❌ Routes failed:', e.message);

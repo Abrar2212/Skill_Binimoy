@@ -1,0 +1,29 @@
+{
+  "name": "Skill Binimoy (Codespaces)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bullseye",
+  "forwardPorts": [5173, 5000],
+  "portsAttributes": {
+    "5173": {
+      "label": "Frontend (Vite)",
+      "onAutoForward": "openBrowser"
+    },
+    "5000": {
+      "label": "Backend (Express API)",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "npm run install:all && node -e \"const fs=require('fs'); if(!fs.existsSync('backend/.env')&&fs.existsSync('backend/.env.example')){fs.copyFileSync('backend/.env.example','backend/.env'); console.log('✅ Created backend/.env from .env.example');}\"",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "bradlc.vscode-tailwindcss",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}

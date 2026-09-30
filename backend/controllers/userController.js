@@ -2,6 +2,7 @@ const { db, getNextId } = require('../config/firebase');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const sendEmail = require('../utils/sendEmail');
+const JWT_SECRET = process.env.JWT_SECRET || 'skillBinimoySecret2026XYZ';
 
 // ==========================================
 // REGISTER USER
@@ -245,7 +246,7 @@ exports.loginUser = async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ message: 'Invalid email or password' });
 
-        const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
         return res.status(200).json({
             message: 'Login successful!',
             token,
@@ -325,11 +326,19 @@ exports.getProfile = async (req, res) => {
 
         // 1. Get user skills
         const skillsSnap = await db.collection('skills').where('user_id', '==', userId).get();
-        const skills = skillsSnap.docs.map(doc => ({
-            id: doc.data().id,
-            skill_name: doc.data().skill_name,
-            skill_type: doc.data().skill_type
-        }));
+        const skillMap = new Map();
+        skillsSnap.docs.forEach(doc => {
+            const d = doc.data();
+            const sid = d.id !== undefined ? d.id : doc.id;
+            if (!skillMap.has(sid)) {
+                skillMap.set(sid, {
+                    id: sid,
+                    skill_name: d.skill_name,
+                    skill_type: d.skill_type
+                });
+            }
+        });
+        const skills = Array.from(skillMap.values());
 
         user.skills_teach = skills.filter(s => s.skill_type === 'teach');
         user.skills_learn = skills.filter(s => s.skill_type === 'learn');
@@ -521,7 +530,19 @@ exports.deleteSkill = async (req, res) => {
 // ==========================================
 exports.getAllUsers = async (req, res) => {
     try {
-        const currentUserId = parseInt(req.user.id);
+        let currentUserId = null;
+        if (req.user && req.user.id) {
+            currentUserId = parseInt(req.user.id);
+        } else {
+            const authHeader = req.headers.authorization;
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                try {
+                    const token = authHeader.split(' ')[1];
+                    const decoded = jwt.verify(token, JWT_SECRET);
+                    currentUserId = decoded.id;
+                } catch (e) {}
+            }
+        }
 
         // Fetch all users
         const usersSnap = await db.collection('users').get();
@@ -561,18 +582,251 @@ exports.getAllUsers = async (req, res) => {
             else if (s.skill_type === 'learn') skillsByUser.get(s.user_id).learn.push(s.skill_name);
         });
 
+        const currentUserSkills = skillsByUser.get(currentUserId) || { teach: [], learn: [] };
+        const myTeach = currentUserSkills.teach || [];
+        const myLearn = currentUserSkills.learn || [];
+
         users.forEach(u => {
             const userSkills = skillsByUser.get(u.id);
             if (userSkills) {
                 u.skills_teach = userSkills.teach;
                 u.skills_learn = userSkills.learn;
             }
+
+            // AI Match calculation based on profile
+            const canTeachMe = (u.skills_teach || []).filter(st => 
+                myLearn.some(ml => ml.toLowerCase().includes(st.toLowerCase()) || st.toLowerCase().includes(ml.toLowerCase()))
+            );
+            const wantsFromMe = (u.skills_learn || []).filter(sl => 
+                myTeach.some(mt => mt.toLowerCase().includes(sl.toLowerCase()) || sl.toLowerCase().includes(mt.toLowerCase()))
+            );
+            const isReciprocal = canTeachMe.length > 0 && wantsFromMe.length > 0;
+
+            let score = 0;
+            let matchType = 'none';
+            if (isReciprocal) {
+                score = 98;
+                matchType = 'reciprocal';
+            } else if (canTeachMe.length > 0) {
+                score = 85;
+                matchType = 'mentor';
+            } else if (wantsFromMe.length > 0) {
+                score = 70;
+                matchType = 'learner';
+            }
+
+            u.ai_match = {
+                score,
+                match_type: matchType,
+                is_reciprocal: isReciprocal,
+                can_teach_me: canTeachMe,
+                wants_from_me: wantsFromMe,
+                reason: isReciprocal 
+                    ? `100% Reciprocal Trade: Offers ${canTeachMe[0]} and wants ${wantsFromMe[0]}!`
+                    : canTeachMe.length > 0
+                    ? `Teaches your wishlist skill: ${canTeachMe[0]}`
+                    : wantsFromMe.length > 0
+                    ? `Looking for what you teach: ${wantsFromMe[0]}`
+                    : null
+            };
         });
 
-        return res.status(200).json({ users });
+        return res.status(200).json({ users, my_profile_ready: myTeach.length > 0 && myLearn.length > 0 });
     } catch (err) {
         console.error('Get all users error:', err);
         return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// ==========================================
+// GET TRADE POSTS (Marketplace Posts)
+// ==========================================
+exports.getTradePosts = async (req, res) => {
+    try {
+        let currentUserId = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.split(' ')[1];
+                const decoded = jwt.verify(token, JWT_SECRET);
+                currentUserId = decoded.id;
+            } catch (e) {}
+        }
+
+        const [postsSnap, usersSnap, skillsSnap] = await Promise.all([
+            db.collection('trade_posts').get(),
+            db.collection('users').get(),
+            db.collection('skills').get()
+        ]);
+
+        const usersMap = new Map();
+        usersSnap.forEach(doc => {
+            const u = doc.data();
+            usersMap.set(u.id, {
+                name: u.full_name,
+                image: u.profile_image || null,
+                rating: u.rating || 5.0,
+                headline: u.headline || '',
+                review_count: u.review_count || 0
+            });
+        });
+
+        const skillsByUser = new Map();
+        skillsSnap.forEach(d => {
+            const s = d.data();
+            if (!skillsByUser.has(s.user_id)) skillsByUser.set(s.user_id, { teach: [], learn: [] });
+            if (s.skill_type === 'teach') skillsByUser.get(s.user_id).teach.push(s.skill_name);
+            else if (s.skill_type === 'learn') skillsByUser.get(s.user_id).learn.push(s.skill_name);
+        });
+
+        const mySkills = currentUserId ? (skillsByUser.get(currentUserId) || { teach: [], learn: [] }) : { teach: [], learn: [] };
+        const myTeach = mySkills.teach || [];
+        const myLearn = mySkills.learn || [];
+
+        const posts = [];
+        postsSnap.forEach(doc => {
+            const p = doc.data();
+            const userInfo = usersMap.get(p.user_id) || { name: 'Community Member', image: null, rating: 5.0, headline: '', review_count: 0 };
+            
+            // Calculate AI match based on user's profile
+            const offersWhatIWant = myLearn.some(l => 
+                l.toLowerCase().includes(p.offered_skill.toLowerCase()) || p.offered_skill.toLowerCase().includes(l.toLowerCase())
+            );
+            const wantsWhatIOffer = myTeach.some(t => 
+                t.toLowerCase().includes(p.requested_skill.toLowerCase()) || p.requested_skill.toLowerCase().includes(t.toLowerCase())
+            );
+            const isReciprocal = offersWhatIWant && wantsWhatIOffer;
+
+            let aiScore = 0;
+            let matchType = 'none';
+            if (isReciprocal) {
+                aiScore = 98;
+                matchType = 'reciprocal';
+            } else if (offersWhatIWant) {
+                aiScore = 85;
+                matchType = 'wishlist';
+            } else if (wantsWhatIOffer) {
+                aiScore = 75;
+                matchType = 'offer';
+            }
+
+            posts.push({
+                ...p,
+                user_name: userInfo.name,
+                user_image: userInfo.image,
+                user_rating: userInfo.rating,
+                user_headline: userInfo.headline,
+                user_review_count: userInfo.review_count,
+                is_own_post: currentUserId ? p.user_id === currentUserId : false,
+                ai_match: {
+                    score: aiScore,
+                    match_type: matchType,
+                    is_reciprocal: isReciprocal,
+                    reason: isReciprocal 
+                        ? `✨ 100% AI Reciprocal Match: Offers ${p.offered_skill} (which you want), seeks ${p.requested_skill} (which you teach)!`
+                        : offersWhatIWant
+                        ? `🎯 Teaches a skill on your wishlist: ${p.offered_skill}`
+                        : wantsWhatIOffer
+                        ? `💡 Wants a skill you can teach: ${p.requested_skill}`
+                        : null
+                }
+            });
+        });
+
+        // Default sort: highest AI match first, then newest
+        posts.sort((a, b) => {
+            if ((b.ai_match?.score || 0) !== (a.ai_match?.score || 0)) {
+                return (b.ai_match?.score || 0) - (a.ai_match?.score || 0);
+            }
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+
+        return res.status(200).json({ posts, my_profile_ready: myTeach.length > 0 && myLearn.length > 0 });
+    } catch (err) {
+        console.error('Get trade posts error:', err);
+        return res.status(500).json({ message: 'Failed to fetch trade posts' });
+    }
+};
+
+// ==========================================
+// CREATE TRADE POST (Marketplace)
+// ==========================================
+exports.createTradePost = async (req, res) => {
+    try {
+        const userId = parseInt(req.user.id);
+        const { title, offered_skill, requested_skill, description, availability } = req.body;
+
+        if (!title || !title.trim()) return res.status(400).json({ message: 'Trade title is required' });
+        if (!offered_skill || !offered_skill.trim()) return res.status(400).json({ message: 'Offered skill is required' });
+        if (!requested_skill || !requested_skill.trim()) return res.status(400).json({ message: 'Requested skill is required' });
+
+        const postId = await getNextId('trade_posts');
+        const postDoc = {
+            id: postId,
+            user_id: userId,
+            title: title.trim(),
+            offered_skill: offered_skill.trim(),
+            requested_skill: requested_skill.trim(),
+            description: description ? description.trim() : '',
+            availability: availability ? availability.trim() : 'Flexible schedule',
+            status: 'Open',
+            created_at: new Date().toISOString()
+        };
+
+        await db.collection('trade_posts').doc(String(postId)).set(postDoc);
+
+        // Ensure user's offered_skill and requested_skill are recorded in user profile
+        const existingSkills = await db.collection('skills').where('user_id', '==', userId).get();
+        const hasTeach = existingSkills.docs.some(d => d.data().skill_type === 'teach' && d.data().skill_name.toLowerCase() === offered_skill.trim().toLowerCase());
+        const hasLearn = existingSkills.docs.some(d => d.data().skill_type === 'learn' && d.data().skill_name.toLowerCase() === requested_skill.trim().toLowerCase());
+
+        if (!hasTeach) {
+            const sid = await getNextId('skills');
+            await db.collection('skills').doc(String(sid)).set({
+                id: sid,
+                user_id: userId,
+                skill_name: offered_skill.trim(),
+                skill_type: 'teach',
+                created_at: new Date().toISOString()
+            });
+        }
+        if (!hasLearn) {
+            const sid = await getNextId('skills');
+            await db.collection('skills').doc(String(sid)).set({
+                id: sid,
+                user_id: userId,
+                skill_name: requested_skill.trim(),
+                skill_type: 'learn',
+                created_at: new Date().toISOString()
+            });
+        }
+
+        return res.status(201).json({ message: 'Trade offer published successfully!', post: postDoc });
+    } catch (err) {
+        console.error('Create trade post error:', err);
+        return res.status(500).json({ message: 'Failed to create trade post' });
+    }
+};
+
+// ==========================================
+// DELETE TRADE POST
+// ==========================================
+exports.deleteTradePost = async (req, res) => {
+    try {
+        const userId = parseInt(req.user.id);
+        const postId = String(req.params.id);
+
+        const postRef = db.collection('trade_posts').doc(postId);
+        const postDoc = await postRef.get();
+
+        if (!postDoc.exists) return res.status(404).json({ message: 'Trade post not found' });
+        if (postDoc.data().user_id !== userId) return res.status(403).json({ message: 'Not authorized to delete this trade post' });
+
+        await postRef.delete();
+        return res.status(200).json({ message: 'Trade post deleted successfully' });
+    } catch (err) {
+        console.error('Delete trade post error:', err);
+        return res.status(500).json({ message: 'Failed to delete trade post' });
     }
 };
 
@@ -638,23 +892,31 @@ exports.getRequests = async (req, res) => {
         const requests = Array.from(requestsMap.values());
         requests.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        // Cache user info lookups
-        const userCache = new Map();
-        const getUserInfo = async (uid) => {
-            if (userCache.has(uid)) return userCache.get(uid);
-            const uDoc = await db.collection('users').doc(String(uid)).get();
-            const data = uDoc.exists ? uDoc.data() : null;
-            const info = {
-                name: data ? data.full_name : 'Community Member',
-                image: data ? (data.profile_image || null) : null
-            };
-            userCache.set(uid, info);
-            return info;
-        };
+        // Collect all distinct user IDs
+        const userIds = new Set();
+        requests.forEach(r => {
+            if (r.sender_id) userIds.add(r.sender_id);
+            if (r.receiver_id) userIds.add(r.receiver_id);
+        });
+
+        // Parallel fetch all needed user docs in one batch
+        const userDocs = await Promise.all(
+            Array.from(userIds).map(uid => db.collection('users').doc(String(uid)).get())
+        );
+        const userMap = new Map();
+        userDocs.forEach(doc => {
+            if (doc.exists) {
+                const d = doc.data();
+                userMap.set(d.id, {
+                    name: d.full_name || 'Community Member',
+                    image: d.profile_image || null
+                });
+            }
+        });
 
         for (const r of requests) {
-            const senderInfo = await getUserInfo(r.sender_id);
-            const receiverInfo = await getUserInfo(r.receiver_id);
+            const senderInfo = userMap.get(r.sender_id) || { name: 'Community Member', image: null };
+            const receiverInfo = userMap.get(r.receiver_id) || { name: 'Community Member', image: null };
 
             r.sender_name = senderInfo.name;
             r.sender_image = senderInfo.image;
@@ -741,27 +1003,36 @@ exports.getSessions = async (req, res) => {
         if (requestsMap.size === 0) return res.status(200).json({ sessions: [] });
 
         const relevantSessions = [];
+        const seenSessionIds = new Set();
         sessionsSnap.forEach(doc => {
             const s = doc.data();
-            if (requestsMap.has(s.request_id)) {
-                relevantSessions.push({ ...s });
+            const sid = s.id !== undefined ? s.id : doc.id;
+            if (requestsMap.has(s.request_id) && !seenSessionIds.has(sid)) {
+                seenSessionIds.add(sid);
+                relevantSessions.push({ ...s, id: sid });
             }
         });
 
-        // User lookup cache
-        const userCache = new Map();
-        const getUserName = async (uid) => {
-            if (!uid) return 'Member';
-            if (userCache.has(uid)) return userCache.get(uid);
-            try {
-                const uDoc = await db.collection('users').doc(String(uid)).get();
-                const name = uDoc.exists ? uDoc.data().full_name : 'Member';
-                userCache.set(uid, name);
-                return name;
-            } catch {
-                return 'Member';
+        // Collect distinct user IDs
+        const userIds = new Set();
+        relevantSessions.forEach(s => {
+            const er = requestsMap.get(s.request_id);
+            if (er) {
+                if (er.sender_id) userIds.add(er.sender_id);
+                if (er.receiver_id) userIds.add(er.receiver_id);
             }
-        };
+        });
+
+        // Parallel fetch all needed user docs
+        const userDocs = await Promise.all(
+            Array.from(userIds).map(uid => db.collection('users').doc(String(uid)).get())
+        );
+        const userMap = new Map();
+        userDocs.forEach(doc => {
+            if (doc.exists) {
+                userMap.set(doc.data().id, doc.data().full_name || 'Member');
+            }
+        });
 
         // Join data
         for (const s of relevantSessions) {
@@ -771,8 +1042,8 @@ exports.getSessions = async (req, res) => {
             s.sender_id = er.sender_id;
             s.receiver_id = er.receiver_id;
 
-            s.sender_name = await getUserName(er.sender_id);
-            s.receiver_name = await getUserName(er.receiver_id);
+            s.sender_name = userMap.get(er.sender_id) || 'Member';
+            s.receiver_name = userMap.get(er.receiver_id) || 'Member';
             s.partner_name = er.sender_id === userId ? s.receiver_name : s.sender_name;
         }
 
@@ -822,15 +1093,16 @@ exports.getMessages = async (req, res) => {
         const otherUserId = parseInt(req.params.userId);
 
         // Fetch messages where (sender == user && receiver == other) OR (sender == other && receiver == user)
-        const snap1 = await db.collection('messages')
-            .where('sender_id', '==', userId)
-            .where('receiver_id', '==', otherUserId)
-            .get();
-
-        const snap2 = await db.collection('messages')
-            .where('sender_id', '==', otherUserId)
-            .where('receiver_id', '==', userId)
-            .get();
+        const [snap1, snap2] = await Promise.all([
+            db.collection('messages')
+                .where('sender_id', '==', userId)
+                .where('receiver_id', '==', otherUserId)
+                .get(),
+            db.collection('messages')
+                .where('sender_id', '==', otherUserId)
+                .where('receiver_id', '==', userId)
+                .get()
+        ]);
 
         const messages = [];
         const unreadBatch = db.batch();
@@ -848,15 +1120,19 @@ exports.getMessages = async (req, res) => {
 
         messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-        // Fetch sender names
-        const senderNames = new Map();
-        for (const m of messages) {
-            if (!senderNames.has(m.sender_id)) {
-                const uDoc = await db.collection('users').doc(String(m.sender_id)).get();
-                senderNames.set(m.sender_id, uDoc.exists ? uDoc.data().full_name : 'Member');
-            }
-            m.sender_name = senderNames.get(m.sender_id);
-        }
+        // Fetch sender names in parallel
+        const senderIds = Array.from(new Set(messages.map(m => m.sender_id)));
+        const senderDocs = await Promise.all(
+            senderIds.map(uid => db.collection('users').doc(String(uid)).get())
+        );
+        const senderMap = new Map();
+        senderDocs.forEach(doc => {
+            if (doc.exists) senderMap.set(doc.data().id, doc.data().full_name);
+        });
+
+        messages.forEach(m => {
+            m.sender_name = senderMap.get(m.sender_id) || 'Member';
+        });
 
         return res.status(200).json({ messages });
     } catch (err) {
@@ -900,41 +1176,49 @@ exports.getChatUsers = async (req, res) => {
     try {
         const userId = parseInt(req.user.id);
 
-        const sentSnap = await db.collection('messages').where('sender_id', '==', userId).get();
-        const recvSnap = await db.collection('messages').where('receiver_id', '==', userId).get();
+        const [sentSnap, recvSnap] = await Promise.all([
+            db.collection('messages').where('sender_id', '==', userId).get(),
+            db.collection('messages').where('receiver_id', '==', userId).get()
+        ]);
 
         const partnerIds = new Set();
         sentSnap.forEach(d => partnerIds.add(d.data().receiver_id));
         recvSnap.forEach(d => partnerIds.add(d.data().sender_id));
         partnerIds.delete(userId);
 
-        const users = [];
-        for (const pId of partnerIds) {
-            const uDoc = await db.collection('users').doc(String(pId)).get();
-            if (uDoc.exists) {
-                const u = uDoc.data();
-                const unreadSnap = await db.collection('messages')
-                    .where('receiver_id', '==', userId)
-                    .where('sender_id', '==', pId)
-                    .where('is_read', '==', false)
-                    .get();
+        if (partnerIds.size === 0) {
+            return res.status(200).json({ users: [] });
+        }
 
-                users.push({
+        const userResults = await Promise.all(
+            Array.from(partnerIds).map(async (pId) => {
+                const [uDoc, unreadSnap] = await Promise.all([
+                    db.collection('users').doc(String(pId)).get(),
+                    db.collection('messages')
+                        .where('receiver_id', '==', userId)
+                        .where('sender_id', '==', pId)
+                        .where('is_read', '==', false)
+                        .get()
+                ]);
+                if (!uDoc.exists) return null;
+                const u = uDoc.data();
+                return {
                     id: u.id,
                     full_name: u.full_name,
                     profile_image: u.profile_image || null,
                     unread: unreadSnap.size
-                });
-            }
-        }
+                };
+            })
+        );
 
-        return res.status(200).json({ users });
+        return res.status(200).json({ users: userResults.filter(Boolean) });
     } catch (err) {
         console.error('Get chat users error:', err);
         return res.status(500).json({ message: 'Server error' });
     }
 };
 
+// ==========================================
 // ==========================================
 // GET REVIEWS
 // ==========================================
@@ -945,19 +1229,36 @@ exports.getReviews = async (req, res) => {
             .where('reviewed_id', '==', userId)
             .get();
 
-        const reviews = reviewsSnap.docs.map(doc => doc.data());
+        const reviewMap = new Map();
+        reviewsSnap.docs.forEach(doc => {
+            const d = doc.data();
+            const rid = d.id !== undefined ? d.id : doc.id;
+            if (!reviewMap.has(rid)) {
+                reviewMap.set(rid, { ...d, id: rid });
+            }
+        });
+        const reviews = Array.from(reviewMap.values());
         reviews.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-        for (const r of reviews) {
-            const uDoc = await db.collection('users').doc(String(r.reviewer_id)).get();
-            if (uDoc.exists) {
-                const u = uDoc.data();
-                r.reviewer_name = u.full_name;
-                r.reviewer_image = u.profile_image || null;
-            } else {
-                r.reviewer_name = 'Member';
-                r.reviewer_image = null;
+        const reviewerIds = Array.from(new Set(reviews.map(r => r.reviewer_id).filter(Boolean)));
+        const userDocs = await Promise.all(
+            reviewerIds.map(uid => db.collection('users').doc(String(uid)).get())
+        );
+        const userMap = new Map();
+        userDocs.forEach(doc => {
+            if (doc.exists) {
+                const u = doc.data();
+                userMap.set(u.id, {
+                    name: u.full_name || 'Member',
+                    image: u.profile_image || null
+                });
             }
+        });
+
+        for (const r of reviews) {
+            const u = userMap.get(r.reviewer_id);
+            r.reviewer_name = u ? u.name : 'Member';
+            r.reviewer_image = u ? u.image : null;
         }
 
         return res.status(200).json({ reviews });
@@ -1017,24 +1318,28 @@ exports.getFriends = async (req, res) => {
     try {
         const userId = parseInt(req.user.id);
 
-        const snap1 = await db.collection('exchange_requests')
-            .where('sender_id', '==', userId)
-            .where('status', '==', 'Accepted')
-            .get();
-
-        const snap2 = await db.collection('exchange_requests')
-            .where('receiver_id', '==', userId)
-            .where('status', '==', 'Accepted')
-            .get();
+        const [snap1, snap2] = await Promise.all([
+            db.collection('exchange_requests')
+                .where('sender_id', '==', userId)
+                .where('status', '==', 'Accepted')
+                .get(),
+            db.collection('exchange_requests')
+                .where('receiver_id', '==', userId)
+                .where('status', '==', 'Accepted')
+                .get()
+        ]);
 
         const friendIds = new Set();
         snap1.forEach(d => friendIds.add(d.data().receiver_id));
         snap2.forEach(d => friendIds.add(d.data().sender_id));
         friendIds.delete(userId);
 
+        const friendDocs = await Promise.all(
+            Array.from(friendIds).map(fId => db.collection('users').doc(String(fId)).get())
+        );
+
         const friends = [];
-        for (const fId of friendIds) {
-            const uDoc = await db.collection('users').doc(String(fId)).get();
+        friendDocs.forEach(uDoc => {
             if (uDoc.exists) {
                 const u = uDoc.data();
                 friends.push({
@@ -1043,7 +1348,7 @@ exports.getFriends = async (req, res) => {
                     profile_image: u.profile_image || null
                 });
             }
-        }
+        });
 
         return res.status(200).json({ friends });
     } catch (err) {
@@ -1105,20 +1410,18 @@ exports.getGroups = async (req, res) => {
         const memSnap = await db.collection('group_members').where('user_id', '==', userId).get();
         if (memSnap.empty) return res.status(200).json({ groups: [] });
 
-        const groups = [];
-        for (const doc of memSnap.docs) {
-            const gId = doc.data().group_id;
-            const gDoc = await db.collection('groups').doc(String(gId)).get();
-            if (gDoc.exists) {
+        const groupIds = Array.from(new Set(memSnap.docs.map(doc => doc.data().group_id)));
+
+        const groupResults = await Promise.all(
+            groupIds.map(async (gId) => {
+                const [gDoc, allMembersSnap, msgSnap] = await Promise.all([
+                    db.collection('groups').doc(String(gId)).get(),
+                    db.collection('group_members').where('group_id', '==', gId).get(),
+                    db.collection('group_messages').where('group_id', '==', gId).get()
+                ]);
+
+                if (!gDoc.exists) return null;
                 const gData = gDoc.data();
-
-                // Count members
-                const allMembersSnap = await db.collection('group_members').where('group_id', '==', gId).get();
-
-                // Last message
-                const msgSnap = await db.collection('group_messages')
-                    .where('group_id', '==', gId)
-                    .get();
 
                 let lastMessage = null;
                 if (!msgSnap.empty) {
@@ -1127,17 +1430,18 @@ exports.getGroups = async (req, res) => {
                     lastMessage = allMsgs[0].message;
                 }
 
-                groups.push({
+                return {
                     id: gData.id,
                     name: gData.name,
                     created_by: gData.created_by,
                     created_at: gData.created_at,
                     member_count: allMembersSnap.size,
                     last_message: lastMessage
-                });
-            }
-        }
+                };
+            })
+        );
 
+        const groups = groupResults.filter(Boolean);
         groups.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         return res.status(200).json({ groups });
     } catch (err) {
@@ -1167,16 +1471,25 @@ exports.getGroupMessages = async (req, res) => {
         const messages = msgSnap.docs.map(d => d.data());
         messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-        for (const m of messages) {
-            const uDoc = await db.collection('users').doc(String(m.sender_id)).get();
-            if (uDoc.exists) {
-                const u = uDoc.data();
-                m.sender_name = u.full_name;
-                m.sender_image = u.profile_image || null;
-            } else {
-                m.sender_name = 'Member';
-                m.sender_image = null;
+        const senderIds = Array.from(new Set(messages.map(m => m.sender_id)));
+        const senderDocs = await Promise.all(
+            senderIds.map(uid => db.collection('users').doc(String(uid)).get())
+        );
+        const senderMap = new Map();
+        senderDocs.forEach(doc => {
+            if (doc.exists) {
+                const u = doc.data();
+                senderMap.set(u.id, {
+                    name: u.full_name,
+                    image: u.profile_image || null
+                });
             }
+        });
+
+        for (const m of messages) {
+            const sender = senderMap.get(m.sender_id);
+            m.sender_name = sender ? sender.name : 'Member';
+            m.sender_image = sender ? sender.image : null;
         }
 
         return res.status(200).json({ messages });
@@ -1227,10 +1540,13 @@ exports.getGroupMembers = async (req, res) => {
         const groupId = parseInt(req.params.groupId);
         const memSnap = await db.collection('group_members').where('group_id', '==', groupId).get();
 
+        const uIds = Array.from(new Set(memSnap.docs.map(doc => doc.data().user_id)));
+        const userDocs = await Promise.all(
+            uIds.map(uid => db.collection('users').doc(String(uid)).get())
+        );
+
         const members = [];
-        for (const doc of memSnap.docs) {
-            const uId = doc.data().user_id;
-            const uDoc = await db.collection('users').doc(String(uId)).get();
+        userDocs.forEach(uDoc => {
             if (uDoc.exists) {
                 const u = uDoc.data();
                 members.push({
@@ -1239,7 +1555,7 @@ exports.getGroupMembers = async (req, res) => {
                     profile_image: u.profile_image || null
                 });
             }
-        }
+        });
 
         return res.status(200).json({ members });
     } catch (err) {
@@ -1249,7 +1565,7 @@ exports.getGroupMembers = async (req, res) => {
 };
 
 // ==========================================
-// AI CHATBOT (Binimoy AI Assistant)
+// AI CHATBOT (Binimoy AI Assistant - Dynamic & Concise)
 // ==========================================
 exports.chatWithBot = async (req, res) => {
     const { message, history } = req.body;
@@ -1260,27 +1576,117 @@ exports.chatWithBot = async (req, res) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
         return res.status(200).json({
-            reply: "👋 Hello! I am **Binimoy AI**, your Skill Binimoy assistant.\n\nIt looks like the `GEMINI_API_KEY` hasn't been set in your backend environment variables yet. Once added on Render, I'll be fully active to answer all your learning and platform questions!\n\n💡 *Quick tip: Skill Binimoy lets you teach skills you know and learn new skills for free—no money needed!*"
+            reply: "Please set your `GEMINI_API_KEY` in `backend/.env` to chat with the AI assistant."
         });
     }
 
-    const systemInstruction = `You are Binimoy AI, the official friendly and intelligent assistant for "Skill Binimoy" — a modern peer-to-peer skill exchange platform where people share knowledge for free through skill bartering (no money involved).
+    // Resolve User Identity
+    let currentUserId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+            const token = authHeader.split(' ')[1];
+            const decoded = jwt.verify(token, JWT_SECRET);
+            currentUserId = decoded.id;
+        } catch (e) {}
+    }
+    if (!currentUserId && req.body.userId) {
+        currentUserId = parseInt(req.body.userId);
+    }
 
-Key Knowledge about Skill Binimoy:
-1. Registration & Auth: Users register with a @gmail.com address, receive a 6-digit verification code, and verify their account.
-2. Profile: Users list "Skills I Teach" and "Skills I Want to Learn", and can upload an avatar/cover photo.
-3. Marketplace: Users can browse and search members by skills offered/wanted, view profiles, and click "Send Request" to initiate an exchange.
-4. Requests: Received exchange requests can be Accepted or Rejected.
-5. Sessions: Once a request is accepted, users can schedule 1-on-1 sessions with meeting links (Google Meet, Zoom, etc.) and durations.
-6. Messages/Chat: Users can chat directly with accepted partners or create study groups.
-7. Reviews: Users can review and rate each other (1 to 5 stars) after learning sessions.
-
-Your responsibilities:
-- Answer questions about how to use Skill Binimoy clearly and concisely.
-- If a user asks for skill recommendations or learning roadmaps (e.g., Web Development, Python, UI/UX, Graphic Design, Photography, Cooking, etc.), give structured, encouraging, and practical advice.
-- Keep answers concise, polite, well-formatted with Markdown (bullet points, bold text), and easy to read on mobile.`;
+    // Fetch live community members, skills, requests, and sessions from Firestore
+    let allUsers = [];
+    let currentUser = null;
+    let peers = [];
+    let userRequests = [];
 
     try {
+        const [usersSnap, skillsSnap] = await Promise.all([
+            db.collection('users').get(),
+            db.collection('skills').get()
+        ]);
+
+        const skillsByUser = new Map();
+        skillsSnap.forEach(d => {
+            const s = d.data();
+            if (!skillsByUser.has(s.user_id)) skillsByUser.set(s.user_id, { teach: [], learn: [] });
+            if (s.skill_type === 'teach') skillsByUser.get(s.user_id).teach.push(s.skill_name);
+            else if (s.skill_type === 'learn') skillsByUser.get(s.user_id).learn.push(s.skill_name);
+        });
+
+        usersSnap.forEach(d => {
+            const u = d.data();
+            const skills = skillsByUser.get(u.id) || { teach: [], learn: [] };
+            allUsers.push({
+                id: u.id,
+                full_name: u.full_name,
+                bio: u.bio || '',
+                rating: u.rating || 5.0,
+                skills_teach: skills.teach,
+                skills_learn: skills.learn
+            });
+        });
+
+        if (currentUserId) {
+            currentUser = allUsers.find(u => u.id === currentUserId) || null;
+            const [sentSnap, recvSnap] = await Promise.all([
+                db.collection('exchange_requests').where('sender_id', '==', currentUserId).get(),
+                db.collection('exchange_requests').where('receiver_id', '==', currentUserId).get()
+            ]);
+            sentSnap.forEach(d => userRequests.push(d.data()));
+            recvSnap.forEach(d => userRequests.push(d.data()));
+        }
+        peers = allUsers.filter(u => currentUser && u.id !== currentUser.id);
+    } catch (dbErr) {
+        console.warn('Chatbot directory fetch error:', dbErr.message);
+    }
+
+    const userTeaches = currentUser ? currentUser.skills_teach : [];
+    const userLearns = currentUser ? currentUser.skills_learn : [];
+
+    // Helper: Find a peer by name
+    const findPeer = (nameStr) => {
+        if (!nameStr) return null;
+        const q = nameStr.toLowerCase().trim();
+        return peers.find(p => p.full_name.toLowerCase().includes(q) || q.includes(p.full_name.toLowerCase())) || null;
+    };
+
+    try {
+        const systemInstruction = `You are Binimoy AI, the powerful and concise AI assistant for "Skill Binimoy" (a peer-to-peer skill barter platform where users exchange knowledge for free).
+
+CURRENT LOGGED-IN USER:
+- Name: ${currentUser ? currentUser.full_name : 'Guest User'}
+- Skills to Learn: ${userLearns.length > 0 ? userLearns.join(', ') : 'None added yet'}
+- Skills to Teach: ${userTeaches.length > 0 ? userTeaches.join(', ') : 'None added yet'}
+
+LIVE COMMUNITY PEERS & AVAILABLE TRADERS:
+${peers.map(p => `- ${p.full_name} (${p.rating}★) | Teaches: [${p.skills_teach.join(', ')}] | Wants: [${p.skills_learn.join(', ')}]`).join('\n')}
+
+ACTIVE USER REQUESTS:
+${userRequests.map(r => `- Request #${r.id} with Partner ID ${r.sender_id === currentUserId ? r.receiver_id : r.sender_id}: Status [${r.status}] (${r.offered_skill} ↔ ${r.requested_skill})`).join('\n') || 'None'}
+
+PLATFORM ACTIONS YOU CAN TRIGGER:
+You have real-time website integration to execute user commands:
+1. SEND AN EXCHANGE REQUEST:
+   If the user asks to send a request, propose a trade, contact, or barter with someone (e.g. "Send request to Nusrat", "Propose trade with Rakib"):
+   Add this tag at the very end of your response:
+   [[ACTION:SEND_REQUEST|PeerName|OfferedSkill|RequestedSkill]]
+
+2. SCHEDULE A 1-ON-1 VIDEO SESSION:
+   If the user asks to schedule a video session, create a video call, or meet with a partner (e.g. "Schedule session with Nusrat", "Start video call"):
+   Add this tag at the very end of your response:
+   [[ACTION:SCHEDULE_SESSION|PartnerName|Topic]]
+
+3. SUGGEST A BARTER ACTION BUTTON:
+   Whenever you recommend a specific peer to the user:
+   Add this tag at the very end of your response so the user gets an instant 1-click barter button:
+   [[ACTION:SUGGEST_BARTER|PeerName|OfferedSkill|RequestedSkill]]
+
+RULES & CONSTRAINTS:
+1. Identify the best reciprocal matches where peer teaches what user wants, and peer wants what user teaches.
+2. ULTRA-CONCISE: Answers must be short, punchy (2-4 sentences max). No long essays or walls of text!
+3. If user has not added skills yet, ask which skill they want to learn and can teach.`;
+
         const contents = [];
         if (Array.isArray(history)) {
             const validHistory = history.slice(-6);
@@ -1298,53 +1704,220 @@ Your responsibilities:
             parts: [{ text: message.trim() }]
         });
 
-        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-lite-latest'];
+        // Model Hierarchy: Prioritize configured Pro model, then robust fallbacks
+        const candidateModels = [];
+        if (process.env.GEMINI_MODEL) {
+            candidateModels.push(process.env.GEMINI_MODEL);
+        }
+        candidateModels.push(
+            'gemini-3.1-pro-preview',
+            'gemini-pro-latest',
+            'gemini-2.5-pro',
+            'gemini-3.5-flash-lite',
+            'gemini-3.1-flash-lite',
+            'gemini-3.8-flash',
+            'gemini-flash-lite-latest',
+            'gemini-flash-latest'
+        );
+
+        const uniqueModels = [...new Set(candidateModels)];
         let replyText = null;
 
-        for (const model of candidateModels) {
+        for (const model of uniqueModels) {
             try {
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
+
                 const response = await fetch(geminiUrl, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'x-goog-api-key': apiKey
+                        'Content-Type': 'application/json'
                     },
+                    signal: controller.signal,
                     body: JSON.stringify({
                         system_instruction: {
                             parts: [{ text: systemInstruction }]
                         },
                         contents,
                         generationConfig: {
-                            temperature: 0.7,
-                            maxOutputTokens: 800
+                            temperature: 0.5,
+                            maxOutputTokens: 250
                         }
                     })
                 });
+                clearTimeout(timeoutId);
 
                 const data = await response.json();
                 if (response.ok && data?.candidates?.[0]?.content?.parts?.[0]?.text) {
                     replyText = data.candidates[0].content.parts[0].text;
                     break;
                 } else {
-                    console.warn(`Model ${model} failed:`, data?.error?.message || data);
+                    console.warn(`Model ${model} issue:`, data?.error?.message || response.statusText);
                 }
             } catch (modelErr) {
                 console.warn(`Model ${model} request error:`, modelErr.message);
             }
         }
 
-        if (!replyText) {
-            return res.status(200).json({
-                reply: "I'm having a little trouble connecting to the AI service right now. Please try again in a few moments! 😊"
-            });
+        // Action detection & execution
+        let actionResult = null;
+        const msgLower = message.toLowerCase();
+
+        // 1. Check for action tag in Gemini reply
+        const actionMatch = replyText ? replyText.match(/\[\[ACTION:(SEND_REQUEST|SCHEDULE_SESSION|SUGGEST_BARTER)\|([^|]+)\|?([^|]*)?\|?([^\]]*)?\]\]/) : null;
+
+        let actionType = actionMatch ? actionMatch[1] : null;
+        let actionPeerName = actionMatch ? actionMatch[2]?.trim() : null;
+        let actionParam1 = actionMatch ? actionMatch[3]?.trim() : null;
+        let actionParam2 = actionMatch ? actionMatch[4]?.trim() : null;
+
+        // Fallback intent detection if Gemini didn't use the tag
+        if (!actionType) {
+            const peerMentioned = peers.find(p => msgLower.includes(p.full_name.toLowerCase()) || msgLower.includes(p.full_name.split(' ')[0].toLowerCase()));
+            if (peerMentioned) {
+                if (msgLower.includes('send request') || msgLower.includes('propose') || msgLower.includes('contact') || msgLower.includes('trade with')) {
+                    actionType = 'SEND_REQUEST';
+                    actionPeerName = peerMentioned.full_name;
+                    actionParam1 = userTeaches[0] || 'Skill Barter';
+                    actionParam2 = peerMentioned.skills_teach[0] || 'Learning Session';
+                } else if (msgLower.includes('session') || msgLower.includes('video call') || msgLower.includes('schedule') || msgLower.includes('meet')) {
+                    actionType = 'SCHEDULE_SESSION';
+                    actionPeerName = peerMentioned.full_name;
+                    actionParam1 = peerMentioned.skills_teach[0] || '1-on-1 Video Session';
+                }
+            }
         }
 
-        return res.status(200).json({ reply: replyText });
+        // Clean action tag from text
+        if (replyText) {
+            replyText = replyText.replace(/\[\[ACTION:[^\]]+\]\]/g, '').trim();
+        }
+
+        // Execute action if detected
+        if (actionType === 'SEND_REQUEST' && actionPeerName) {
+            const targetPeer = findPeer(actionPeerName);
+            if (!currentUser) {
+                replyText = (replyText ? replyText + '\n\n' : '') + 'Please log in to your account first so I can send the exchange request on your behalf.';
+            } else if (targetPeer) {
+                const offered = actionParam1 || userTeaches[0] || 'Skill Exchange';
+                const requested = actionParam2 || targetPeer.skills_teach[0] || 'Skill Exchange';
+
+                // Check existing pending request
+                const existing = userRequests.find(r => 
+                    (r.sender_id === targetPeer.id || r.receiver_id === targetPeer.id) && r.status === 'Pending'
+                );
+
+                if (existing) {
+                    replyText = (replyText ? replyText + '\n\n' : '') + `You already have a pending exchange request with ${targetPeer.full_name} in your Requests tab!`;
+                    actionResult = {
+                        type: 'request_sent',
+                        data: {
+                            requestId: existing.id,
+                            partnerName: targetPeer.full_name,
+                            offeredSkill: existing.offered_skill || offered,
+                            requestedSkill: existing.requested_skill || requested,
+                            alreadyPending: true
+                        }
+                    };
+                } else {
+                    const requestId = await getNextId('exchange_requests');
+                    const requestData = {
+                        id: requestId,
+                        sender_id: currentUser.id,
+                        receiver_id: targetPeer.id,
+                        offered_skill: offered,
+                        requested_skill: requested,
+                        message: `Hi ${targetPeer.full_name.split(' ')[0]}! I would love to barter skills with you (Proposed via Skill Binimoy AI Assistant).`,
+                        status: 'Pending',
+                        created_at: new Date().toISOString()
+                    };
+                    await db.collection('exchange_requests').doc(String(requestId)).set(requestData);
+
+                    replyText = (replyText ? replyText + '\n\n' : '') + `✅ Exchange proposal sent to ${targetPeer.full_name}! Offering ${offered} for ${requested}. It is now live in your Requests section.`;
+                    actionResult = {
+                        type: 'request_sent',
+                        data: {
+                            requestId,
+                            partnerName: targetPeer.full_name,
+                            offeredSkill: offered,
+                            requestedSkill: requested
+                        }
+                    };
+                }
+            }
+        } else if (actionType === 'SCHEDULE_SESSION' && actionPeerName) {
+            const targetPeer = findPeer(actionPeerName);
+            if (!currentUser) {
+                replyText = (replyText ? replyText + '\n\n' : '') + 'Please log in to your account first to schedule a video session.';
+            } else if (targetPeer) {
+                const topic = actionParam1 || targetPeer.skills_teach[0] || 'Skill Exchange';
+                const acceptedReq = userRequests.find(r => 
+                    r.status === 'Accepted' && (r.sender_id === targetPeer.id || r.receiver_id === targetPeer.id)
+                );
+
+                if (acceptedReq) {
+                    const sessionId = await getNextId('sessions');
+                    const meetingLink = `https://meet.jit.si/skillbinimoy-session-${sessionId}`;
+                    const sessionData = {
+                        id: sessionId,
+                        request_id: acceptedReq.id,
+                        scheduled_at: new Date(Date.now() + 3600000).toISOString(),
+                        duration_minutes: 60,
+                        meeting_link: meetingLink,
+                        status: 'Upcoming',
+                        created_at: new Date().toISOString()
+                    };
+                    await db.collection('sessions').doc(String(sessionId)).set(sessionData);
+
+                    replyText = (replyText ? replyText + '\n\n' : '') + `🎥 Video session booked with ${targetPeer.full_name} for ${topic}! It is now added to your Sessions section.`;
+                    actionResult = {
+                        type: 'session_created',
+                        data: {
+                            sessionId,
+                            partnerName: targetPeer.full_name,
+                            meetingLink,
+                            topic
+                        }
+                    };
+                } else {
+                    const instantLink = `https://meet.jit.si/skillbinimoy-room-${Date.now()}`;
+                    replyText = (replyText ? replyText + '\n\n' : '') + `🎥 Instant video room created! You can join now to meet with ${targetPeer.full_name}. (Note: To schedule an official appointment in Sessions, an exchange request must first be accepted.)`;
+                    actionResult = {
+                        type: 'join_call',
+                        data: {
+                            partnerName: targetPeer.full_name,
+                            meetingLink: instantLink
+                        }
+                    };
+                }
+            }
+        } else if (actionType === 'SUGGEST_BARTER' && actionPeerName) {
+            const targetPeer = findPeer(actionPeerName);
+            if (targetPeer) {
+                actionResult = {
+                    type: 'suggest_barter',
+                    data: {
+                        peerId: targetPeer.id,
+                        partnerName: targetPeer.full_name,
+                        offeredSkill: actionParam1 || userTeaches[0] || 'Skill Exchange',
+                        requestedSkill: actionParam2 || targetPeer.skills_teach[0] || 'Skill Exchange'
+                    }
+                };
+            }
+        }
+
+        if (replyText) {
+            return res.status(200).json({ reply: replyText, action: actionResult });
+        }
+
+        return res.status(200).json({
+            reply: "I'm having a little trouble connecting to Gemini right now. Please try again in a moment!"
+        });
     } catch (err) {
-        console.error('Chatbot error:', err);
+        console.error('Chatbot error:', err.message);
         return res.status(500).json({
-            reply: "Oops! Something went wrong while processing your question. Please try again."
+            reply: "Sorry, an unexpected error occurred while processing your request."
         });
     }
 };
@@ -1817,7 +2390,17 @@ exports.getActivityFeed = async (req, res) => {
         // Sort descending by created_at
         activities.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        return res.status(200).json({ activities: activities.slice(0, 6) });
+        // Ensure unique IDs
+        const seenActIds = new Set();
+        const uniqueActivities = [];
+        for (const act of activities) {
+            if (!seenActIds.has(act.id)) {
+                seenActIds.add(act.id);
+                uniqueActivities.push(act);
+            }
+        }
+
+        return res.status(200).json({ activities: uniqueActivities.slice(0, 6) });
     } catch (err) {
         console.error('Get activity feed error:', err);
         return res.status(500).json({ message: 'Failed to get activity feed' });

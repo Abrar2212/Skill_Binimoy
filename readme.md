@@ -11,6 +11,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-4.x-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
 [![Firebase](https://img.shields.io/badge/Firebase_Firestore-Admin_SDK-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Open in GitHub Codespaces](https://img.shields.io/badge/Codespaces-Ready-blue?style=for-the-badge&logo=github)](https://codespaces.new/Abrar2212/Skill_Binimoy)
 
 ---
 
@@ -73,7 +74,23 @@ Skill_Binimoy/
 
 ## 🛠️ Getting Started
 
-### Prerequisites
+### ☁️ Run in GitHub Codespaces (Recommended & Zero Setup)
+
+You can launch and run Skill Binimoy directly inside GitHub Codespaces without installing anything on your machine:
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Abrar2212/Skill_Binimoy)
+
+1. Click the **Open in GitHub Codespaces** button above or click **Code > Codespaces > Create codespace on main**.
+2. Dependencies and `.env` setup will run automatically.
+3. Start both backend and frontend servers with a single command from the project root:
+   ```bash
+   npm run dev
+   ```
+4. VS Code will automatically forward port `5173` (Frontend) and `5000` (Backend API) and prompt you to open the application in your browser.
+
+---
+
+### Local Setup Prerequisites
 - **Node.js** (v18 or higher recommended)
 - **npm** or **yarn** / **pnpm**
 - Firebase project credentials (for backend)

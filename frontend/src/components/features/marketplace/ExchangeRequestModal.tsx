@@ -13,6 +13,8 @@ interface ExchangeRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
   targetUser: MarketplaceUser | null;
+  initialOfferedSkill?: string;
+  initialRequestedSkill?: string;
   onSuccess?: () => void;
 }
 
@@ -20,6 +22,8 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({
   isOpen,
   onClose,
   targetUser,
+  initialOfferedSkill,
+  initialRequestedSkill,
   onSuccess,
 }) => {
   const { user } = useAuth();
@@ -31,31 +35,35 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({
   const [error, setError] = useState('');
   const [sentSuccess, setSentSuccess] = useState(false);
 
-  // Load current user's taught skills from database
+  // Initialize modal state and load skills when modal opens
   useEffect(() => {
-    if (isOpen) {
-      setError('');
-      userService
-        .getProfile()
-        .then((data) => {
-          const teach = (data.user?.skills_teach || []).map((s) => s.skill_name);
-          setMyTeachSkills(teach);
-          if (teach.length > 0 && !offeredSkill) {
-            setOfferedSkill(teach[0]);
-          }
-        })
-        .catch((err) => console.error('Failed to load user skills:', err));
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
 
-  // Set default requested skill when targetUser opens
-  useEffect(() => {
-    if (targetUser && targetUser.skills_teach && targetUser.skills_teach.length > 0) {
+    setError('');
+    setSentSuccess(false);
+
+    if (initialOfferedSkill) {
+      setOfferedSkill(initialOfferedSkill);
+    }
+    if (initialRequestedSkill) {
+      setRequestedSkill(initialRequestedSkill);
+    } else if (targetUser?.skills_teach && targetUser.skills_teach.length > 0) {
       setRequestedSkill(targetUser.skills_teach[0]);
     } else {
       setRequestedSkill('');
     }
-  }, [targetUser]);
+
+    userService
+      .getProfile()
+      .then((data) => {
+        const teach = (data.user?.skills_teach || []).map((s) => s.skill_name);
+        setMyTeachSkills(teach);
+        if (!initialOfferedSkill && teach.length > 0) {
+          setOfferedSkill(teach[0]);
+        }
+      })
+      .catch((err) => console.error('Failed to load user skills:', err));
+  }, [isOpen, targetUser, initialOfferedSkill, initialRequestedSkill]);
 
   if (!targetUser) return null;
 

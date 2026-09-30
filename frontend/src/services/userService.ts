@@ -1,6 +1,6 @@
 import { api } from './api';
 import { User, UserStats, ActivityItem, Review } from '../types/user';
-import { Skill, TrendingSkill, MarketplaceUser } from '../types/skill';
+import { Skill, TrendingSkill, MarketplaceUser, TradePost } from '../types/skill';
 
 export const userService = {
   async getProfile(): Promise<{ user: User; skills: Skill[]; stats: UserStats }> {
@@ -9,20 +9,31 @@ export const userService = {
       const u = response.data.user;
       const backendStats = response.data.stats;
 
-      const skills: Skill[] = [
-        ...(u.skills_teach || []).map((s: any) => ({
-          id: s.id,
+      const rawSkills: Skill[] = [
+        ...(u.skills_teach || []).map((s: any, idx: number) => ({
+          id: s.id ?? `teach-${idx}`,
           skill_name: s.skill_name,
           skill_type: 'teach' as const,
           proficiency_level: 'Expert' as const,
         })),
-        ...(u.skills_learn || []).map((s: any) => ({
-          id: s.id,
+        ...(u.skills_learn || []).map((s: any, idx: number) => ({
+          id: s.id ?? `learn-${idx}`,
           skill_name: s.skill_name,
           skill_type: 'learn' as const,
           proficiency_level: 'Beginner' as const,
         })),
       ];
+
+      // Deduplicate skills by combination of id and type
+      const seenSkillKeys = new Set<string>();
+      const skills: Skill[] = [];
+      for (const sk of rawSkills) {
+        const key = `${sk.skill_type}-${sk.id}`;
+        if (!seenSkillKeys.has(key)) {
+          seenSkillKeys.add(key);
+          skills.push(sk);
+        }
+      }
 
       const stats: UserStats = {
         skills_shared: backendStats?.skills_shared ?? (u.skills_teach || []).length,
@@ -85,6 +96,30 @@ export const userService = {
   async getAllUsers(): Promise<MarketplaceUser[]> {
     const response = await api.get('/all');
     return response.data.users || [];
+  },
+
+  async getTradePosts(): Promise<{ posts: TradePost[]; my_profile_ready: boolean }> {
+    const response = await api.get('/trade-posts');
+    return {
+      posts: response.data.posts || [],
+      my_profile_ready: Boolean(response.data.my_profile_ready),
+    };
+  },
+
+  async createTradePost(postData: {
+    title: string;
+    offered_skill: string;
+    requested_skill: string;
+    description?: string;
+    availability?: string;
+  }): Promise<{ message: string; post: TradePost }> {
+    const response = await api.post('/trade-posts', postData);
+    return response.data;
+  },
+
+  async deleteTradePost(id: number | string): Promise<{ message: string }> {
+    const response = await api.delete(`/trade-posts/${id}`);
+    return response.data;
   },
 
   async addSkill(skill: Omit<Skill, 'id'>): Promise<{ message: string; skill: Skill }> {

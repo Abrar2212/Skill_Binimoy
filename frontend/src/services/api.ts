@@ -1,23 +1,31 @@
 import axios from 'axios';
 
-const isLocalHost = Boolean(
-  window.location.hostname === 'localhost' ||
-  window.location.hostname === '127.0.0.1' ||
-  window.location.hostname === '[::1]' ||
-  window.location.protocol === 'file:' ||
-  !window.location.hostname
+const isCodespaceOrLocal = Boolean(
+  typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '[::1]' ||
+    window.location.protocol === 'file:' ||
+    !window.location.hostname ||
+    window.location.hostname.endsWith('.github.dev') ||
+    window.location.hostname.endsWith('.app.github.dev') ||
+    window.location.hostname.includes('codespaces') ||
+    window.location.hostname.includes('gitpod.io')
+  )
 );
 
-export const BASE_API_URL = isLocalHost 
-  ? 'http://localhost:5000/api/users' 
-  : 'https://skill-binimoy-backend.onrender.com/api/users';
+export const BASE_API_URL = import.meta.env.VITE_API_URL || (
+  isCodespaceOrLocal || import.meta.env.DEV
+    ? '/api/users'
+    : 'https://skill-binimoy-backend.onrender.com/api/users'
+);
 
 export const api = axios.create({
   baseURL: BASE_API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 8000,
+  timeout: 30000,
 });
 
 // Attach JWT token from localStorage to every outgoing request

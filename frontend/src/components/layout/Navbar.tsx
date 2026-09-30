@@ -14,9 +14,10 @@ export const Navbar: React.FC = () => {
     { name: 'Home', path: '/', iconClass: 'fa-solid fa-house' },
     { name: 'Dashboard', path: '/dashboard', iconClass: 'fa-solid fa-gauge-high', authOnly: true },
     { name: 'Marketplace', path: '/marketplace', iconClass: 'fa-solid fa-store' },
+    { name: 'Forum', path: '/forum', iconClass: 'fa-solid fa-comments' },
     { name: 'Requests', path: '/requests', iconClass: 'fa-solid fa-handshake', authOnly: true },
     { name: 'Sessions', path: '/sessions', iconClass: 'fa-solid fa-video', authOnly: true },
-    { name: 'Chat', path: '/chat', iconClass: 'fa-solid fa-comments', authOnly: true },
+    { name: 'Chat', path: '/chat', iconClass: 'fa-solid fa-message', authOnly: true },
   ];
 
   const handleLogout = () => {

@@ -22,6 +22,34 @@ export interface TrendingSkill {
   teachers_count?: number;
 }
 
+export interface AIMatchInfo {
+  score: number;
+  match_type: string;
+  is_reciprocal: boolean;
+  can_teach_me?: string[];
+  wants_from_me?: string[];
+  reason?: string | null;
+}
+
+export interface TradePost {
+  id: number;
+  user_id: number;
+  title: string;
+  offered_skill: string;
+  requested_skill: string;
+  description?: string;
+  availability?: string;
+  status: 'Open' | 'Closed';
+  created_at: string;
+  user_name: string;
+  user_image?: string | null;
+  user_rating?: number;
+  user_headline?: string;
+  user_review_count?: number;
+  is_own_post?: boolean;
+  ai_match?: AIMatchInfo;
+}
+
 export interface MarketplaceUser {
   id: number;
   full_name: string;
@@ -34,4 +62,5 @@ export interface MarketplaceUser {
   skills_learn?: string[];
   skills_offered?: (string | Skill)[];
   skills_wanted?: (string | Skill)[];
+  ai_match?: AIMatchInfo;
 }

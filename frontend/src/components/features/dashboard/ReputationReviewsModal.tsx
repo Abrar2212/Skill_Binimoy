@@ -47,7 +47,7 @@ export const ReputationReviewsModal: React.FC<ReputationReviewsModalProps> = ({
               <div className="flex items-center gap-1 text-amber-400 mb-1 text-sm">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <i
-                    key={i}
+                    key={`modal-avg-star-${i}`}
                     className={`fa-star ${
                       i < Math.round(Number(averageRating))
                         ? 'fa-solid text-amber-400'
@@ -71,7 +71,7 @@ export const ReputationReviewsModal: React.FC<ReputationReviewsModalProps> = ({
           <div className="space-y-3">
             {[1, 2, 3].map((n) => (
               <div
-                key={n}
+                key={`modal-skel-${n}`}
                 className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 animate-pulse flex items-start gap-3"
               >
                 <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-800 shrink-0" />
@@ -94,9 +94,9 @@ export const ReputationReviewsModal: React.FC<ReputationReviewsModalProps> = ({
           </div>
         ) : (
           <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
-            {reviews.map((r) => (
+            {reviews.map((r, idx) => (
               <div
-                key={r.id}
+                key={`modal-rev-${r.id ?? idx}-${idx}`}
                 className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col justify-between"
               >
                 <div className="flex items-start justify-between gap-3 mb-2.5">
@@ -117,7 +117,7 @@ export const ReputationReviewsModal: React.FC<ReputationReviewsModalProps> = ({
                   <div className="flex items-center gap-0.5 text-amber-400 shrink-0 text-xs">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <i
-                        key={i}
+                        key={`rev-item-${r.id ?? idx}-star-${i}`}
                         className={`fa-star ${
                           i < (r.rating || 5)
                             ? 'fa-solid text-amber-400'

@@ -6,6 +6,7 @@ import { ProfileHeader } from '../components/features/profile/ProfileHeader';
 import { SkillManager } from '../components/features/profile/SkillManager';
 import { EditProfileModal } from '../components/features/profile/EditProfileModal';
 import { ReviewsList } from '../components/features/profile/ReviewsList';
+import { ProfileForumPosts } from '../components/features/profile/ProfileForumPosts';
 import { userService } from '../services/userService';
 import { useAuth } from '../context/AuthContext';
 import { User } from '../types/user';
@@ -138,6 +139,11 @@ export const ProfilePage: React.FC = () => {
               {/* Reviews & Endorsements */}
               <div className="profile-reveal">
                 <ReviewsList userId={user.id} />
+              </div>
+
+              {/* Forum Discussions & Questions */}
+              <div className="profile-reveal">
+                <ProfileForumPosts userId={user.id} isOwnProfile={true} />
               </div>
 
               {/* Complete Edit Profile Modal */}

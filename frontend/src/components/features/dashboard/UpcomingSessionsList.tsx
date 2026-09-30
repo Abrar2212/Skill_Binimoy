@@ -33,7 +33,7 @@ export const UpcomingSessionsList: React.FC<UpcomingSessionsListProps> = ({ sess
       </div>
 
       <div className="space-y-3">
-        {upcoming.slice(0, 3).map((session) => {
+        {upcoming.slice(0, 3).map((session, idx) => {
           const partnerName =
             session.partner_name || session.receiver_name || session.sender_name || 'Partner';
           const skillName =
@@ -45,7 +45,7 @@ export const UpcomingSessionsList: React.FC<UpcomingSessionsListProps> = ({ sess
 
           return (
             <div
-              key={session.id}
+              key={`upcoming-sess-${session.id ?? idx}-${idx}`}
               className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-[#00D285]/40 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
             >
               <div className="flex items-center gap-3">

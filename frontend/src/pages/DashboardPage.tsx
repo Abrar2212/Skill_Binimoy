@@ -109,6 +109,7 @@ export const DashboardPage: React.FC = () => {
         {/* 4 Key Statistics Cards */}
         <div className="dash-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           <StatCard
+            key="stat-card-shared"
             title="Skills Shared"
             value={stats.skills_shared}
             subtitle="Skills offered to teach"
@@ -116,6 +117,7 @@ export const DashboardPage: React.FC = () => {
             colorGradient="from-[#00D285] to-emerald-600"
           />
           <StatCard
+            key="stat-card-learned"
             title="Skills Learned"
             value={stats.skills_learned}
             subtitle="Skills you want to learn"
@@ -123,6 +125,7 @@ export const DashboardPage: React.FC = () => {
             colorGradient="from-cyan-500 to-blue-600"
           />
           <StatCard
+            key="stat-card-sessions"
             title="Active Sessions"
             value={stats.active_sessions}
             subtitle="Scheduled 1-on-1 exchanges"
@@ -130,6 +133,7 @@ export const DashboardPage: React.FC = () => {
             colorGradient="from-teal-500 to-emerald-500"
           />
           <StatCard
+            key="stat-card-reputation"
             title="Reputation"
             value={`${stats.average_rating ? stats.average_rating.toFixed(1) : '5.0'} ★`}
             subtitle={`Across ${stats.total_reviews} ${stats.total_reviews === 1 ? 'review' : 'reviews'} (Click to view)`}

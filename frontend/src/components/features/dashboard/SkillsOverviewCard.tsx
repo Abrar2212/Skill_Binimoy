@@ -36,9 +36,9 @@ export const SkillsOverviewCard: React.FC<SkillsOverviewCardProps> = ({ skills }
             <span>Skills You Offer:</span>
           </span>
           <div className="flex flex-wrap gap-2">
-            {offered.map((s) => (
+            {offered.map((s, idx) => (
               <Badge
-                key={s.id}
+                key={`offered-${s.id ?? 'sk'}-${s.skill_name}-${idx}`}
                 label={s.skill_name}
                 type="offered"
                 level={s.proficiency_level}
@@ -59,9 +59,9 @@ export const SkillsOverviewCard: React.FC<SkillsOverviewCardProps> = ({ skills }
             <span>Skills You Want to Learn:</span>
           </span>
           <div className="flex flex-wrap gap-2">
-            {wanted.map((s) => (
+            {wanted.map((s, idx) => (
               <Badge
-                key={s.id}
+                key={`wanted-${s.id ?? 'sk'}-${s.skill_name}-${idx}`}
                 label={s.skill_name}
                 type="wanted"
                 size="sm"

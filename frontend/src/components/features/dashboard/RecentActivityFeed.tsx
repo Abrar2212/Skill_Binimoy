@@ -135,7 +135,7 @@ export const RecentActivityFeed: React.FC = () => {
       {loading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((n) => (
-            <div key={n} className="flex items-start gap-3 animate-pulse">
+            <div key={`act-loading-skel-${n}`} className="flex items-start gap-3 animate-pulse">
               <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-800 shrink-0" />
               <div className="flex-1 space-y-2">
                 <div className="h-3 w-1/3 bg-slate-200 dark:bg-slate-800 rounded" />
@@ -166,11 +166,11 @@ export const RecentActivityFeed: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-3.5">
-          {activities.map((item) => {
+          {activities.map((item, idx) => {
             const meta = getActivityMeta(item.type);
             return (
               <div
-                key={item.id}
+                key={`act-item-${item.id ?? idx}-${idx}`}
                 className="activity-item flex items-start gap-3 text-xs p-2 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
               >
                 <div
